@@ -3,13 +3,17 @@ use std::process;
 use log::{LevelFilter, debug, error, info, trace, warn};
 use uuid::{Uuid};
 use rumqttc::{Client, LastWill, MqttOptions, QoS};
+use clap::Parser;
 
 const IMAGES_PATH : &str = "images/";
 const PROCESSED_PATH : &str = "processed_images/";
 
-const SEND_TOPIC : &str = "ekc-send";
-const RECV_TOPIC : &str = "ekc-recv";
-const REG_TOPIC : &str = "ekc-reg";
+#[derive(Parser, Debug)]
+#[command(name = "ekecheiria-producer")]
+struct Args {
+    #[arg()]
+    shader : String
+}
 
 /*
 - producer loads job shader from file
@@ -27,13 +31,19 @@ const REG_TOPIC : &str = "ekc-reg";
 
 fn main() {
     env_logger::builder().filter_level(LevelFilter::max()).init();
+    let args = Args::parse(); 
+    debug!("args : {args:?}");
+    
     let id = "producer:".to_owned() + &Uuid::new_v4().to_string();
     info!("Starting producer with id '{}'", id);
 
-    let mut mqttoptions = MqttOptions::new(id, "localhost", 1883);
+    let mqttoptions = MqttOptions::new(id, "localhost", 1883);
     let (mut client, mut connection) = Client::new(mqttoptions, 10);
 
-    client.publish(SEND_TOPIC, QoS::AtLeastOnce, false, vec![]).unwrap();
+    client.publish("ekc-send", QoS::AtLeastOnce, false, vec![]).unwrap();
+    client.subscribe("ekc-reg", QoS::AtLeastOnce).unwrap();
+    client.subscribe("ekc-recv", QoS::AtLeastOnce).unwrap();
+
 
     for (i, notification) in connection.iter().enumerate() {
         match notification {

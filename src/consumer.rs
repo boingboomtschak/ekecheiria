@@ -9,7 +9,7 @@ fn main() {
     let id = "consumer:".to_owned() + &Uuid::new_v4().to_string();
     info!("Starting consumer with id '{}'", id);
 
-    let mut mqttoptions = MqttOptions::new(id, "localhost", 1883);
+    let mqttoptions = MqttOptions::new(id, "localhost", 1883);
     let (mut client, mut connection) = Client::new(mqttoptions, 10);
 
     client.subscribe("ekc-send", QoS::AtLeastOnce);
