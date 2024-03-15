@@ -5,6 +5,7 @@ use uuid::{Uuid};
 use rumqttc::{Client, LastWill, MqttOptions, QoS, Event, Incoming, Outgoing};
 use clap::Parser;
 use pollster::FutureExt;
+use image::{ImageBuffer, Rgba};
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about=None)]
@@ -21,6 +22,7 @@ fn main() {
 
     let id = &Uuid::new_v4().to_string();
     info!("Starting consumer with id '{}'", id);
+    let send_topic = "ekc-send-".to_owned() + id;
 
     let mqttoptions = MqttOptions::new(id, "localhost", 1883);
     let (mut client, mut connection) = Client::new(mqttoptions, 10);
@@ -38,7 +40,7 @@ fn main() {
         .block_on().expect("Failed to receive device from adapter");
 
     client.subscribe("ekc-init", QoS::AtLeastOnce).unwrap();
-    client.subscribe("ekc-send-".to_owned() + id, QoS::AtLeastOnce).unwrap();
+    client.subscribe(send_topic, QoS::AtLeastOnce).unwrap();
 
     for notification in connection.iter() {
         match notification {
@@ -49,8 +51,13 @@ fn main() {
                         match packet.topic.as_str() {
                             "ekc-init" => {
                                 init_pipeline(String::from_utf8(packet.payload.to_vec()).expect("Error reading shader from init event!"));
-                                client.publish("ekc-reg", QoS::AtLeastOnce, false, id.as_bytes());
+                                client.publish("ekc-reg", QoS::AtLeastOnce, false, id.as_bytes()).unwrap();
                             },
+                            send_topic => {
+                                let input_image = image::load_from_memory(&packet.payload.to_vec()).unwrap().to_rgba8();
+                                let processed_image = process_image(input_image);
+                                client.publish("ekc-recv", QoS::AtLeastOnce, false, vec![]).unwrap();
+                            }
                             _ => ()
                         }
                     }
@@ -69,8 +76,10 @@ fn main() {
 
 fn init_pipeline(shader : String) {
     debug!("Shader: {shader}");
+
 }
 
-fn process_image() {
-
+fn process_image(input_image : ImageBuffer<Rgba<u8>, Vec<u8>>) -> ImageBuffer<Rgba<u8>, Vec<u8>> {
+    
+    return input_image;
 }

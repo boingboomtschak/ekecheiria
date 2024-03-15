@@ -1,12 +1,13 @@
 #![allow(unused_imports)]
 use std::{process, fs};
 use std::collections::HashMap;
+use std::path::PathBuf;
 use log::{LevelFilter, debug, error, info, trace, warn};
 use uuid::{Uuid};
 use rumqttc::{Client, LastWill, MqttOptions, QoS, Event, Incoming, Outgoing};
 use clap::Parser;
 
-const IMAGES_PATH : &str = "images/";
+const IMAGES_PATH : &str = "images";
 const PROCESSED_PATH : &str = "processed_images/";
 
 #[derive(Parser, Debug)]
@@ -46,8 +47,14 @@ fn main() {
 
     info!("Loading shader '{0}'...", args.shader);
     let shader = fs::read_to_string(args.shader).expect("Bad path to shader file");
+
+    let image_paths = fs::read_dir(IMAGES_PATH)
+        .expect("Failed to load images from path")
+        .map(|entry| { entry.unwrap().path() })
+        .collect::<Vec<PathBuf>>();
+    info!("Found {0} images in '{IMAGES_PATH}'", image_paths.len());
     
-    let id = "producer:".to_owned() + &Uuid::new_v4().to_string();
+    let id = &Uuid::new_v4().to_string();
     info!("Starting producer with id '{}'", id);
 
     let mqttoptions = MqttOptions::new(id, "localhost", 1883);
