@@ -58,11 +58,11 @@ fn main() {
     info!("Starting producer with id '{}'", id);
 
     let mqttoptions = MqttOptions::new(id, "localhost", 1883);
-    let (mut client, mut connection) = Client::new(mqttoptions, 10);
+    let (client, mut connection) = Client::new(mqttoptions, 10);
 
-    client.publish("ekc-init", QoS::AtLeastOnce, false, shader.as_bytes()).unwrap();
     client.subscribe("ekc-reg", QoS::AtLeastOnce).unwrap();
     client.subscribe("ekc-recv", QoS::AtLeastOnce).unwrap();
+    client.publish("ekc-init", QoS::AtLeastOnce, false, shader.as_bytes()).unwrap();
 
     let mut consumers : HashMap<String, ConsumerStatus> = HashMap::new();
 
@@ -72,12 +72,9 @@ fn main() {
                 Event::Incoming(evt) => {
                     debug!("MQTT< {evt:?}");
                     if let Incoming::Publish(packet) = evt {
-                        match packet.topic.as_str() {
-                            "ekc-reg" => {
-                                consumers.insert(String::from_utf8(packet.payload.to_vec()).expect("Error parsing consumer id from reg"), ConsumerStatus::Ready);
-                                debug!("Consumers: {consumers:?}");
-                            },
-                            _ => ()
+                        if packet.topic == "ekc-reg" {
+                            consumers.insert(String::from_utf8(packet.payload.to_vec()).expect("Error parsing consumer id from reg"), ConsumerStatus::Ready);
+                            debug!("Consumers: {consumers:?}");
                         }
                     }
                 },
