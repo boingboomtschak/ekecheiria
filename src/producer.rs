@@ -1,10 +1,9 @@
-#![allow(unused_imports)]
-use std::{process, fs};
+use std::fs;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use log::{LevelFilter, debug, error, info, trace, warn};
+use log::{LevelFilter, debug, error, info};
 use uuid::{Uuid};
-use rumqttc::{Client, LastWill, MqttOptions, QoS, Event, Incoming, Outgoing};
+use rumqttc::{Client, MqttOptions, QoS, Event, Incoming};
 use clap::Parser;
 
 const IMAGES_PATH : &str = "images";
