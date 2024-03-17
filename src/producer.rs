@@ -9,7 +9,9 @@ use log::{LevelFilter, debug, error, info};
 use uuid::{Uuid};
 use rumqttc::{Client, MqttOptions, QoS, Event, Incoming};
 use clap::Parser;
-use image::ImageBuffer;
+use crate::shared::EkcImage;
+
+mod shared;
 
 const IMAGES_PATH : &str = "images";
 const PROCESSED_PATH : &str = "processed_images";
@@ -75,8 +77,9 @@ fn main() {
     let t_consumers = consumers.clone();
 
     task::spawn(async move {
-        info!("Starting to send images in 15 seconds...");
-        task::sleep(Duration::from_secs(15)).await;
+        let secs = 10;
+        info!("Starting to send images in {secs} seconds...");
+        task::sleep(Duration::from_secs(secs)).await;
         info!("Beginning to send images...");
         for image_path in image_paths.iter() {
             info!("Sending '{image_path:?}'");
@@ -91,7 +94,9 @@ fn main() {
             }
             let send_topic = "ekc-send-".to_owned() + consumer.as_ref().unwrap();
             let image = image::io::Reader::open(image_path).expect("Failed to read image").decode().expect("Failed to decode image").into_rgba8();
-            t_client.publish(send_topic, QoS::AtLeastOnce, false, image.into_raw());
+            let image_payload = EkcImage { width: image.width(), height: image.height(), image_data: image.into_raw() };
+            t_client.publish(send_topic, QoS::AtLeastOnce, false, image_payload).expect("Failed to send image");
+            t_consumers.lock().expect("Couldn't lock consumers").insert(consumer.unwrap(), ConsumerStatus::Processing);
         }
     });
 
@@ -106,11 +111,14 @@ fn main() {
                             consumers.lock().expect("Couldn't lock consumers").insert(id.clone(), ConsumerStatus::Ready);
                             client.subscribe("ekc-recv-".to_owned() + &id, QoS::AtLeastOnce).unwrap();
                             info!("Registered consumer '{id}'")
-                        } else if packet.topic.starts_with("ekc-recv") {
-                            let processed_image = image::load_from_memory(&packet.payload.to_vec()).unwrap().to_rgba8();
+                        } else if packet.topic.starts_with("ekc-recv-") {
+                            let consumer_id = packet.topic.strip_prefix("ekc-recv-").expect("Failed to parse consumer id");
+                            consumers.lock().expect("Couldn't lock consumers").insert(consumer_id.to_string(), ConsumerStatus::Ready); 
+                            let processed_payload = EkcImage::try_from(packet.payload.as_ref()).expect("Error deserializing image");
+                            let processed_image = image::RgbaImage::from_raw(processed_payload.width, processed_payload.height, processed_payload.image_data).expect("Error loading image from raw");
                             images_processed += 1;
-                            processed_image.save(format!("{PROCESSED_PATH}/image{images_processed}.png"));
-                            info!("Processed and saved 'image{images_processed}.png'");
+                            processed_image.save(format!("{PROCESSED_PATH}/image{images_processed}.png")).expect("Failed to save processed image");
+                            info!("Received and saved 'image{images_processed}.png'");
                         }
                     }
                 },

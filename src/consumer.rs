@@ -4,6 +4,9 @@ use rumqttc::{Client, MqttOptions, QoS, Event, Incoming};
 use clap::Parser;
 use pollster::FutureExt;
 use image::{ImageBuffer, Rgba};
+use crate::shared::EkcImage;
+
+mod shared;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about=None)]
@@ -148,7 +151,6 @@ impl GPU {
         }
 
         let output_image = ImageBuffer::<Rgba<u8>, Vec<u8>>::from_raw(width, height, pixels).expect("Failed to create output image from pixels");
-
         return output_image; 
     }
 }
@@ -194,9 +196,11 @@ fn main() {
                             client.publish("ekc-reg", QoS::AtLeastOnce, false, id.as_bytes()).unwrap();
                             info!("Registered with producer");
                         } else if packet.topic == send_topic {
-                            let input_image = image::load_from_memory(&packet.payload.to_vec()).expect("Error loading image from payload").to_rgba8();
+                            let image_payload = EkcImage::try_from(packet.payload.as_ref()).expect("Error deserializing image");
+                            let input_image = image::RgbaImage::from_raw(image_payload.width, image_payload.height, image_payload.image_data).expect("Error loading image from raw");
                             let processed_image = gpu.process_image(input_image);
-                            client.publish(recv_topic.clone(), QoS::AtLeastOnce, false, processed_image.into_raw()).unwrap();
+                            let processed_payload = EkcImage { width: processed_image.width(), height: processed_image.height(), image_data: processed_image.into_raw() };
+                            client.publish(recv_topic.clone(), QoS::AtLeastOnce, false, processed_payload).unwrap();
                         }
                     }
                 },
