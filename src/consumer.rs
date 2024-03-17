@@ -161,8 +161,10 @@ fn main() {
     let id = &Uuid::new_v4().to_string();
     info!("Starting consumer with id '{}'", id);
     let send_topic = "ekc-send-".to_owned() + id;
+    let recv_topic = "ekc-recv-".to_owned() + id;
 
-    let mqttoptions = MqttOptions::new(id, "localhost", 1883);
+    let mut mqttoptions = MqttOptions::new(id, "localhost", 1883);
+    mqttoptions.set_max_packet_size(32000000, 32000000);
     let (client, mut connection) = Client::new(mqttoptions, 10);
 
     let instance = wgpu::Instance::default();
@@ -190,10 +192,11 @@ fn main() {
                         if packet.topic == "ekc-init" {
                             gpu.init_pipeline(String::from_utf8(packet.payload.to_vec()).expect("Error reading shader from init event!"));
                             client.publish("ekc-reg", QoS::AtLeastOnce, false, id.as_bytes()).unwrap();
+                            info!("Registered with producer");
                         } else if packet.topic == send_topic {
-                            let input_image = image::load_from_memory(&packet.payload.to_vec()).unwrap().to_rgba8();
+                            let input_image = image::load_from_memory(&packet.payload.to_vec()).expect("Error loading image from payload").to_rgba8();
                             let processed_image = gpu.process_image(input_image);
-                            client.publish("ekc-recv", QoS::AtLeastOnce, false, processed_image.as_raw().as_slice()).unwrap();
+                            client.publish(recv_topic.clone(), QoS::AtLeastOnce, false, processed_image.into_raw()).unwrap();
                         }
                     }
                 },
