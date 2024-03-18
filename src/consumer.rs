@@ -29,11 +29,14 @@ const WORKGROUP_SIZE_Y : u32 = 16;
 impl GPU {
     fn init_pipeline(&mut self, shader : String) {
         debug!("Shader: {shader}");
+        
+        // Compile shader into shader module
         let shader_module = self.device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("mqtt-shader"),
             source: wgpu::ShaderSource::Wgsl(shader.into())
         });
 
+        // Create compute pipeline with shader module
         self.pipeline = Some(self.device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
             label: Some("mqtt-pipeline"),
             layout: None,
@@ -42,6 +45,7 @@ impl GPU {
         }));
     }
 
+    // Helper for calculating 256-divisible number of bytes per row for image->buffer transfer
     fn padded_bytes_per_row(width: u32) -> u32 {
         let bytes_per_row = width * 4;
         let padding = (256 - bytes_per_row % 256) % 256;
@@ -51,6 +55,8 @@ impl GPU {
     fn process_image(&self, input_image : ImageBuffer<Rgba<u8>, Vec<u8>>) -> ImageBuffer<Rgba<u8>, Vec<u8>> {
         let (width, height) = input_image.dimensions();
         let texture_size = wgpu::Extent3d { width, height, depth_or_array_layers: 1 };
+
+        // Create input texture on GPU, then write image to it 
         let input_texture = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("input-texture"),
             size: texture_size,
@@ -71,6 +77,8 @@ impl GPU {
             },
             texture_size
         );
+
+        // Create output texture, mark as storage texture
         let output_texture = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("output-texture"),
             size: texture_size,
@@ -82,6 +90,7 @@ impl GPU {
             view_formats: &[wgpu::TextureFormat::Rgba8Unorm]
         });
 
+        // Create bind group for pipeline with newly created textures
         let texture_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("mqtt-bind-group"),
             layout: &self.pipeline.as_ref().expect("Creating bind group from uninitialized pipeline").get_bind_group_layout(0),
@@ -97,6 +106,7 @@ impl GPU {
             ]
         });
 
+        // Create command encoder, compute pass, set necessary state and dispatch parameters
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
         {
             let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -108,6 +118,7 @@ impl GPU {
             compute_pass.dispatch_workgroups((width + WORKGROUP_SIZE_X - 1) / WORKGROUP_SIZE_X, (height + WORKGROUP_SIZE_Y - 1) / WORKGROUP_SIZE_Y, 1);
         }
 
+        // Add texture to buffer copy after compute pass to retrieve resulting image
         let padded_bytes_per_row = GPU::padded_bytes_per_row(width);
         let unpadded_bytes_per_row = width * 4;
         let output_buffer_size = (padded_bytes_per_row * height) as u64;
@@ -135,13 +146,15 @@ impl GPU {
             texture_size
         );
 
+        // Submit encoder to queue to be executed
         self.queue.submit(Some(encoder.finish()));
 
+        // Map buffer to CPU memory asynchronously while processing, wait for device to be idle
         let buffer_slice = output_buffer.slice(..);
         buffer_slice.map_async(wgpu::MapMode::Read, |_| {});
-
         self.device.poll(wgpu::Maintain::Wait);
 
+        // Unpad bytes from buffer to process back into image again
         let padded_data = buffer_slice.get_mapped_range();
         let mut pixels: Vec<u8> = vec![0; (unpadded_bytes_per_row * height) as usize];
         for (padded, pixels) in padded_data
@@ -150,6 +163,7 @@ impl GPU {
             pixels.copy_from_slice(&padded[..(unpadded_bytes_per_row as usize)])
         }
 
+        // Store image data back in image buffer and return to caller
         let output_image = ImageBuffer::<Rgba<u8>, Vec<u8>>::from_raw(width, height, pixels).expect("Failed to create output image from pixels");
         return output_image; 
     }
@@ -162,13 +176,16 @@ fn main() {
 
     let id = &Uuid::new_v4().to_string();
     info!("Starting consumer with id '{}'", id);
+
     let send_topic = "ekc-send-".to_owned() + id;
     let recv_topic = "ekc-recv-".to_owned() + id;
 
+    // Configure and initialize MQTT client with connection
     let mut mqttoptions = MqttOptions::new(id, "localhost", 1883);
     mqttoptions.set_max_packet_size(128000000, 128000000);
     let (client, mut connection) = Client::new(mqttoptions, 10);
 
+    // Initialize wgpu API instance, adapter, device, and queue
     let instance = wgpu::Instance::default();
     let adapter = instance.request_adapter(
         &wgpu::RequestAdapterOptionsBase {
@@ -182,22 +199,32 @@ fn main() {
         .block_on().expect("Failed to receive device from adapter");
     let mut gpu = GPU { device : device, queue : queue, pipeline : None };
 
+    // Subscribe to initialization topic and personal send topic
     client.subscribe("ekc-init", QoS::AtLeastOnce).unwrap();
     client.subscribe(send_topic.clone(), QoS::AtLeastOnce).unwrap();
 
+    // Process incoming events from MQTT connection
     for notification in connection.iter() {
         match notification {
             Ok(evt_dir) => match evt_dir {
                 Event::Incoming(evt) => {
                     debug!("MQTT< {evt:?}");
+                    // Handle incoming publish packets
                     if let Incoming::Publish(packet) = evt {
                         if packet.topic == "ekc-init" {
+                            // Handle initialization packets, create compute pipeline and compile shader, then register with producer
                             gpu.init_pipeline(String::from_utf8(packet.payload.to_vec()).expect("Error reading shader from init event!"));
                             client.publish("ekc-reg", QoS::AtLeastOnce, false, id.as_bytes()).unwrap();
                             info!("Registered with producer");
+
                         } else if packet.topic == send_topic {
+                            // Handle images being sent to consumers 
+
+                            // Deserialize image payload
                             let image_payload = EkcImage::try_from(packet.payload.as_ref()).expect("Error deserializing image");
                             let input_image = image::RgbaImage::from_raw(image_payload.width, image_payload.height, image_payload.image_data).expect("Error loading image from raw");
+
+                            // Process image on GPU, serialize, send back to producer
                             let processed_image = gpu.process_image(input_image);
                             let processed_payload = EkcImage { width: processed_image.width(), height: processed_image.height(), image_data: processed_image.into_raw() };
                             client.publish(recv_topic.clone(), QoS::AtLeastOnce, false, processed_payload).unwrap();
