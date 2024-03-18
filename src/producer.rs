@@ -58,7 +58,8 @@ fn main() {
         .expect("Failed to load images from path")
         .map(|entry| { entry.unwrap().path() })
         .collect::<Vec<PathBuf>>();
-    info!("Found {0} images in '{IMAGES_PATH}'", image_paths.len());
+    let num_images = image_paths.len();
+    info!("Found {num_images} images in '{IMAGES_PATH}'");
     let mut images_processed = 0;
     std::fs::create_dir_all(PROCESSED_PATH).expect("Failed to create processed image directory");
     
@@ -78,7 +79,7 @@ fn main() {
     let t_consumers = consumers.clone();
 
     task::spawn(async move {
-        let secs = 10;
+        let secs = 3;
         info!("Starting to send images in {secs} seconds...");
         task::sleep(Duration::from_secs(secs)).await;
         info!("Beginning to send images...");
@@ -120,6 +121,10 @@ fn main() {
                             images_processed += 1;
                             processed_image.save(format!("{PROCESSED_PATH}/image{images_processed}.png")).expect("Failed to save processed image");
                             info!("Received and saved 'image{images_processed}.png'");
+                            if images_processed == num_images {
+                                client.disconnect().expect("Failed to disconnect MQTT client");
+                                break;
+                            }
                         }
                     }
                 },
