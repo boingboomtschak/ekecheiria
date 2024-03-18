@@ -60,12 +60,13 @@ fn main() {
         .collect::<Vec<PathBuf>>();
     info!("Found {0} images in '{IMAGES_PATH}'", image_paths.len());
     let mut images_processed = 0;
+    std::fs::create_dir_all(PROCESSED_PATH).expect("Failed to create processed image directory");
     
     let id = &Uuid::new_v4().to_string();
     info!("Starting producer with id '{}'", id);
 
     let mut mqttoptions = MqttOptions::new(id, "localhost", 1883);
-    mqttoptions.set_max_packet_size(32000000, 32000000);
+    mqttoptions.set_max_packet_size(128000000, 128000000);
     let (mqtt_client, mut connection) = Client::new(mqttoptions, 10);
     let client = Arc::new(mqtt_client);
     let t_client = client.clone();

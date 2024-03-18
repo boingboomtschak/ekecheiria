@@ -166,7 +166,7 @@ fn main() {
     let recv_topic = "ekc-recv-".to_owned() + id;
 
     let mut mqttoptions = MqttOptions::new(id, "localhost", 1883);
-    mqttoptions.set_max_packet_size(32000000, 32000000);
+    mqttoptions.set_max_packet_size(128000000, 128000000);
     let (client, mut connection) = Client::new(mqttoptions, 10);
 
     let instance = wgpu::Instance::default();
