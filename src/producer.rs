@@ -58,6 +58,7 @@ fn main() {
     let image_paths = fs::read_dir(IMAGES_PATH)
         .expect("Failed to load images from path")
         .map(|entry| { entry.unwrap().path() })
+        .filter(|path| !path.ends_with(".DS_Store"))
         .collect::<Vec<PathBuf>>();
     let num_images = image_paths.len();
     info!("Found {num_images} images in '{IMAGES_PATH}'");

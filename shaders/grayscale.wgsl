@@ -14,7 +14,7 @@ fn main(@builtin(global_invocation_id) global_id : vec3<u32>) {
     }
 
     let color = textureLoad(input_texture, coords.xy, 0);
-    let gray = dot(vec3<f32>(0.299, 0.587, 0.114), color.rgb);
+    let luma = dot(vec3<f32>(0.299, 0.587, 0.114), color.rgb);
 
-    textureStore(output_texture, coords.xy, vec4<f32>(gray, gray, gray, color.a));
+    textureStore(output_texture, coords.xy, vec4<f32>(luma, luma, luma, color.a));
 }
