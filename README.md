@@ -4,7 +4,12 @@ Proof-of-concept distributed image processing pipeline using GPU compute shaders
 
 ## Usage
 
-Run an MQTT broker (for local development, [rumqttd](https://github.com/bytebeamio/rumqtt/tree/main/rumqttd) is suggested) and configure it in the code as needed, otherwise it will connect to `localhost:1883`.
+Run an MQTT broker (for local development, [rumqttd](https://github.com/bytebeamio/rumqtt/tree/main/rumqttd) is suggested) and configure it in the code as needed, otherwise it will connect to `localhost:1883`. A config file for rumqttd that ups the packet size to a more appropriate limit is included, and can be run with the below command, but other MQTT brokers must be configured for this.
+
+```
+cargo run --release -- -c rumqttd-config.toml   # if running from the cloned rumqttd repository
+rumqttd -c rumqttd-config.toml                  # if rumqttd is already installed in path
+```
 
 Run the below command on any number of consumers, which should subscribe them to the appropriate topics and initialize the wgpu instance.
 
